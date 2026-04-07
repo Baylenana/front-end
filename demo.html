@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>水库调度知识智能体</title>
+    <style>
+        :root {
+            --primary-blue: #1a73e8;
+            --light-blue: #e8f0fe;
+            --success-green: #34a853;
+            --bg-gray: #f4f7f9;
+            --text-main: #333;
+            --text-muted: #666;
+            --border-color: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background-color: var(--bg-gray);
+            margin: 0;
+            padding: 20px;
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            user-select: none; /* 防止双击时选中文本暴露 */
+        }
+
+        .header h1 {
+            margin: 0;
+            color: var(--primary-blue);
+            font-size: 24px;
+            display: inline-block;
+            cursor: default;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        /* 左侧：问答区 */
+        .left-panel {
+            flex: none;
+            width: 50%;
+            min-width: 320px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border-color);
+            min-height: 0;
+        }
+
+        .panel-header {
+            background: var(--light-blue);
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+            border-radius: 12px 12px 0 0;
+            font-weight: bold;
+            color: var(--primary-blue);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            max-width: 90%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            line-height: 1.6;
+        }
+
+        .msg-user {
+            background: var(--primary-blue);
+            color: #fff;
+            align-self: flex-end;
+            border-bottom-right-radius: 0;
+        }
+
+        .msg-ai {
+            background: var(--light-blue);
+            color: var(--text-main);
+            align-self: flex-start;
+            border-bottom-left-radius: 0;
+            display: none; /* 初始隐藏 */
+        }
+
+        .input-area {
+            padding: 15px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 10px;
+        }
+
+        textarea#userInput {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+            line-height: 1.5;
+            min-height: 40px;
+            max-height: 140px;
+            resize: none;
+            overflow-y: auto;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+
+        textarea#userInput:focus {
+            border-color: var(--primary-blue);
+        }
+
+        button {
+            padding: 10px 20px;
+            background: var(--primary-blue);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        button:hover { background: #1557b0; }
+
+        /* 右侧：解剖图区 */
+        .right-panel {
+            flex: 1;
+            min-width: 320px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .trajectory-box, .evidence-box {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+            flex: none;
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .trajectory-box { height: 50%; }
+        .evidence-box { flex: 1; }
+
+        /* 可拖拽分隔条 */
+        .splitter {
+            flex: none;
+            background: transparent;
+            position: relative;
+            z-index: 2;
+        }
+
+        .splitter::after {
+            content: '';
+            position: absolute;
+            background: var(--border-color);
+            border-radius: 2px;
+            opacity: 0.9;
+            transition: background 0.2s;
+        }
+
+        .splitter:hover::after,
+        .splitter.is-dragging::after {
+            background: var(--primary-blue);
+        }
+
+        .splitter-vertical {
+            width: 16px;
+            cursor: col-resize;
+        }
+
+        .splitter-vertical::after {
+            left: 7px;
+            top: 0;
+            width: 2px;
+            height: 100%;
+        }
+
+        .splitter-horizontal {
+            height: 16px;
+            cursor: row-resize;
+        }
+
+        .splitter-horizontal::after {
+            top: 7px;
+            left: 0;
+            height: 2px;
+            width: 100%;
+        }
+
+        .content-area {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* 轨迹步骤样式 */
+        .step {
+            border-left: 3px solid var(--border-color);
+            padding-left: 20px;
+            position: relative;
+            margin-bottom: 25px;
+            display: none; /* 动态显示 */
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .step:hover { background: #fafafa; }
+
+        .step::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 0;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: #ccc;
+            border: 2px solid #fff;
+        }
+
+        .step.active { border-left-color: var(--primary-blue); }
+        .step.active::before { background: var(--primary-blue); }
+        
+        .step-title { font-weight: bold; margin-bottom: 8px; color: var(--primary-blue); }
+        .step-detail { font-size: 13px; color: var(--text-muted); margin-bottom: 5px; }
+        .step-action { font-size: 13px; color: var(--success-green); font-weight: bold; background: #e6f4ea; padding: 4px 8px; border-radius: 4px; display: inline-block; margin-top: 5px;}
+
+        /* 快照样式 */
+        .snapshot-placeholder {
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            background: #fafafa;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .snapshot-content {
+            display: none;
+            height: 100%;
+        }
+
+        .doc-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            background: #fff;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        .doc-tag {
+            background: var(--light-blue);
+            color: var(--primary-blue);
+            padding: 2px 6px;
+            font-size: 12px;
+            border-radius: 4px;
+            margin-right: 5px;
+        }
+
+        .snapshot-item {
+            margin-bottom: 6px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: #fafafa;
+            overflow: hidden;
+        }
+
+        .snapshot-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 14px;
+            color: var(--text-main);
+            transition: background 0.15s;
+        }
+
+        .snapshot-toggle:hover {
+            background: #eef4fd;
+        }
+
+        /* 右侧：角括号式「›」（与「‹」同族），收起朝右、展开朝下，带旋转过渡 */
+        .snapshot-chevron {
+            flex: none;
+            margin-left: auto;
+            min-width: 1.25em;
+            height: 1.25em;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: var(--primary-blue);
+        }
+
+        .snapshot-chevron::before {
+            content: '›';
+            font-size: 1.35rem;
+            font-weight: 300;
+            line-height: 1;
+            transform: rotate(0deg);
+            transition: transform 0.22s ease;
+        }
+
+        .snapshot-item.open .snapshot-chevron::before {
+            transform: rotate(90deg);
+        }
+
+        .snapshot-toggle:hover .snapshot-chevron::before {
+            color: #1557b0;
+        }
+
+        .snapshot-label {
+            flex: 1;
+            min-width: 0;
+            word-break: break-word;
+        }
+
+        .snapshot-panel {
+            border-top: 1px solid var(--border-color);
+            background: #fff;
+        }
+
+        .snapshot-panel-inner {
+            padding: 8px 10px 10px;
+            overflow: visible;
+            max-height: none;
+        }
+
+        .viewer-inline-pre {
+            margin: 0;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #222;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .viewer-inline-image {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0;
+        }
+
+        /* file:// 下 fetch 失败时用 iframe；高度按内容撑满，不出现 iframe 内滚动条 */
+        .viewer-inline-iframe {
+            display: block;
+            width: 100%;
+            min-height: 0;
+            border: none;
+            background: #fff;
+            color-scheme: light;
+            overflow: hidden;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>✨ 水库调度知识智能体</h1>
+    </div>
+
+    <div class="main-container" id="mainContainer">
+        <div class="left-panel" id="leftPanel">
+            <div class="panel-header">
+                <span>💬 AI 回答</span>
+            </div>
+            <div class="chat-area" id="chatArea">
+                </div>
+            <div class="input-area">
+                <textarea id="userInput" placeholder="请输入调度问题..." rows="1"></textarea>
+                <button id="sendBtn">发送</button>
+            </div>
+        </div>
+
+        <div class="splitter splitter-vertical" id="mainSplitter"></div>
+
+        <div class="right-panel" id="rightPanel">
+            <div class="trajectory-box" id="trajectoryBox">
+                <div class="panel-header">
+                    <span>🧠 思考轨迹 (State Space)</span>
+                </div>
+                <div class="content-area" id="trajectoryArea">
+                    </div>
+            </div>
+
+            <div class="splitter splitter-horizontal" id="rightSplitter"></div>
+
+            <div class="evidence-box" id="evidenceBox">
+                <div class="panel-header">
+                    <span>📁 源文件快照</span>
+                </div>
+                <div class="content-area">
+                    <div id="snapshotEmpty" class="snapshot-placeholder">
+                        <span style="font-size: 24px; margin-bottom: 10px;">📄</span>
+                        <p>系统空闲中，等待任务指令...</p>
+                    </div>
+                    <div id="snapshotContent" class="snapshot-content">
+                        </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 预设的演示数据 (基于案例一)
+        const demoData = {
+            question: "6 月 25 日，大伙房水库水位为 128.0 m，此时对应的库容是多少？当前应按什么防洪控制要求运行？",
+            // intents: [
+            //     { no: 1, type: "query", desc: "获取6月25日所属的防洪调度时段划分规则，以确定当前调度阶段" },
+            //     { no: 2, type: "compute", desc: "获取水位与库容的对应关系（库容曲线），以计算128.0m水位下的具体库容数值" },
+            //     { no: 3, type: "judge", desc: "获取当前调度时段的防洪限制水位标准，以判断128.0m水位是否超限" },
+            //     { no: 4, type: "query", desc: "获取对应调度时段的防洪调度方式及控制要求，以明确当前的运行策略" }
+            // ],
+            steps: [
+                {
+                    title: "Step 1/5: 时段阶段划分",
+                    observation: "查询6月25日所属的防洪调度时段及对应的防洪控制要求，优先检索“大伙房水库调度图”和“汛限分期及防洪限制水位”图表以明确当前运行阶段。",
+                    thought: "优先从防洪调度时段章节和关键图表入手，先确定6月25日所属阶段，再反推控制边界。",
+                    action: "定位: 3防洪调度 > 3.3防洪调度时段",
+                    reason: "查询6月防洪时段及控制要求，需检索调度时段章节及关键图表。",
+                    images: ["大伙房水库调度图", "汛限分期及防洪限制水位"],
+                    chunks: [
+                        { name: "3.3防洪调度时段", file: "step1_chunk_3_3防洪调度时段.txt", kind: "text" }
+                    ],
+                    assets: [
+                        { name: "大伙房水库调度图", file: "大伙房水库调度图.png", kind: "image" },
+                        { name: "汛限分期及防洪限制水位", file: "防洪限制水位.png", kind: "image" }
+                    ]
+                },
+                {
+                    title: "Step 2/5: 判定防洪控制要求",
+                    observation: "6月25日属于前汛期（6月1日至7月10日），防洪限制水位为128.0m。调度上限约128.0m-131.5m，调度下限约121.5m-128.0m（随日期动态变化）。",
+                    thought: "继续检索128.0m对应库容，同时回查前汛期控制要求，联合库容曲线与调度图交叉验证。",
+                    action: "定位: 10附录 > 10.4水位～库容～泄量关系 > 10.4.1库容曲线",
+                    reason: "查询水位对应库容及汛期防洪控制要求。",
+                    images: ["大伙房水库库容曲线", "大伙房水库调度图", "防洪限制水位"],
+                    chunks: [
+                        { name: "10.4.1库容曲线", file: "step2_chunk_10_4_1库容曲线.txt", kind: "text" }
+                    ],
+                    assets: [
+                        { name: "大伙房水库库容曲线", file: "大伙房水库库容曲线.png", kind: "image" },
+                        { name: "大伙房水库调度图", file: "大伙房水库调度图.png", kind: "image" },
+                        { name: "防洪限制水位", file: "防洪限制水位.png", kind: "image" }
+                    ]
+                },
+                {
+                    title: "Step 3/5: 形成阶段性结论",
+                    observation: "根据规程文本及图表，水位128.0m对应库容11.25亿m³（1124.7×10⁶m³）；6月25日前汛期防洪限制水位为128.0m，应控制在限制线以下。",
+                    thought: "基于库容曲线得到数值后，再结合防洪限制水位章节确认结论的可执行边界。",
+                    action: "定位: 3防洪调度 > 3.4防洪限制水位",
+                    reason: "查询汛限水位标准及对应库容。",
+                    images: ["大伙房水库库容曲线", "防洪限制水位"],
+                    chunks: [
+                        { name: "3.4防洪限制水位", file: "chunk_3_4防洪限制水位.txt", kind: "text" }
+                    ],
+                    assets: [
+                        { name: "大伙房水库库容曲线", file: "大伙房水库库容曲线.png", kind: "image" },
+                        { name: "防洪限制水位", file: "防洪限制水位.png", kind: "image" }
+                    ]
+                },
+                {
+                    title: "Step 4/5: 完成结论复核",
+                    observation: "复核后结论保持一致：6月25日前汛期，128.0m对应库容11.25亿m³，且该水位即当前时段防洪限制水位。",
+                    thought: "补充核对防洪调度方式章节，确认运行策略表达完整且无歧义。",
+                    action: "已完成：定位 3防洪调度 > 3.4防洪限制水位、3.6防洪调度方式",
+                    reason: "查询前汛期汛限水位及对应库容，并明确调度方式。",
+                    images: ["大伙房水库库容曲线", "防洪限制水位", "大伙房水库水位-库容-面积关系线", "大伙房水库泄流曲线"],
+                    chunks: [
+                        { name: "3.4防洪限制水位", file: "chunk_3_4防洪限制水位.txt", kind: "text" },
+                        { name: "3.6防洪调度方式", file: "step4_chunk_3_6防洪调度方式.txt", kind: "text" }
+                    ],
+                    assets: [
+                        { name: "大伙房水库库容曲线", file: "大伙房水库库容曲线.png", kind: "image" },
+                        { name: "防洪限制水位", file: "防洪限制水位.png", kind: "image" },
+                        { name: "大伙房水库水位-库容-面积关系线", file: "大伙房水库水位-库容-面积关系线.png", kind: "image" },
+                        { name: "大伙房水库泄流曲线", file: "大伙房水库泄流曲线.png", kind: "image" }
+                    ]
+                },
+                {
+                    title: "Step 5/5: 最终作答",
+                    observation: "最终作答：128.0m对应库容11.25亿m³；6月25日属前汛期，防洪限制水位128.0m，运行水位不应超过该标准。",
+                    thought: "—",
+                    action: "—",
+                    reason: "输出最终结论。",
+                    images: []
+                }
+            ],
+            finalAnswer: "1. **对应库容**：水位 128.0m 对应的库容为 **11.25 亿 m³**（即 1124.7×10⁶ m³）。<br><br>2. **防洪控制要求**：6月25日处于**前汛期**（6月1日至7月10日），该时段的**防洪限制水位为 128.0m**。因此，当前水位符合前汛期的防洪控制上限要求，水库运行水位不应超过此标准。"
+        };
+
+        const doms = {
+            input: document.getElementById('userInput'),
+            chatArea: document.getElementById('chatArea'),
+            trajectoryArea: document.getElementById('trajectoryArea'),
+            snapEmpty: document.getElementById('snapshotEmpty'),
+            snapContent: document.getElementById('snapshotContent'),
+            mainContainer: document.getElementById('mainContainer'),
+            leftPanel: document.getElementById('leftPanel'),
+            rightPanel: document.getElementById('rightPanel'),
+            trajectoryBox: document.getElementById('trajectoryBox'),
+            evidenceBox: document.getElementById('evidenceBox'),
+            mainSplitter: document.getElementById('mainSplitter'),
+            rightSplitter: document.getElementById('rightSplitter')
+        };
+
+        // 防止重复点击触发
+        let isRunning = false; 
+
+        function addMessage(text, isUser = false) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${isUser ? 'msg-user' : 'msg-ai'}`;
+            msgDiv.style.display = 'block';
+            msgDiv.innerHTML = text;
+            doms.chatArea.appendChild(msgDiv);
+            doms.chatArea.scrollTop = doms.chatArea.scrollHeight;
+            return msgDiv;
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        /** 无检索动作（如最终总结 Step）时不展示源文件快照 */
+        function hasSnapshotForStep(stepData) {
+            const a = (stepData.action || '').trim();
+            if (!a) return false;
+            if (a === '—' || a === '-' || a === '--') return false;
+            return true;
+        }
+
+        function snapshotRowHtml(icon, name, file, kind) {
+            const safeName = escapeHtml(name);
+            const safeFile = escapeHtml(file || '');
+            const safeKind = escapeHtml(kind || '');
+            return `<div class="snapshot-item" data-loaded="0">
+                <div class="snapshot-toggle" role="button" tabindex="0" aria-expanded="false"
+                    data-file="${safeFile}" data-kind="${safeKind}" data-title="${safeName}">
+                    <span style="color:var(--primary-blue);flex-shrink:0">${icon}</span>
+                    <span class="snapshot-label">${safeName}</span>
+                    <span class="snapshot-chevron" aria-hidden="true"></span>
+                </div>
+                <div class="snapshot-panel" hidden>
+                    <div class="snapshot-panel-inner"></div>
+                </div>
+            </div>`;
+        }
+
+        /** 相对路径解析为与当前页面同源的绝对地址（file:// / http 均适用） */
+        function resolveAssetUrl(filePath) {
+            try {
+                return new URL(filePath, window.location.href).href;
+            } catch {
+                return encodeURI(filePath);
+            }
+        }
+
+        function showTextIframeFallback(innerEl, filePath, title) {
+            const src = resolveAssetUrl(filePath);
+            innerEl.textContent = '';
+            const iframe = document.createElement('iframe');
+            iframe.className = 'viewer-inline-iframe';
+            iframe.title = title || filePath || '';
+            iframe.src = src;
+            iframe.addEventListener('load', () => {
+                try {
+                    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+                    if (!doc || !doc.body) return;
+                    doc.body.style.background = '#fff';
+                    doc.body.style.color = '#222';
+                    doc.body.style.margin = '0';
+                    doc.body.style.fontFamily = "'Segoe UI', 'Microsoft YaHei', sans-serif";
+                    doc.body.style.fontSize = '13px';
+                    doc.body.style.lineHeight = '1.6';
+                    doc.body.style.overflow = 'hidden';
+                    doc.body.style.overflowWrap = 'anywhere';
+                    if (doc.documentElement) {
+                        doc.documentElement.style.overflow = 'hidden';
+                    }
+                    const h = Math.max(
+                        doc.documentElement?.scrollHeight || 0,
+                        doc.body?.scrollHeight || 0
+                    );
+                    if (h > 0) {
+                        iframe.style.height = `${h + 4}px`;
+                    }
+                } catch (e) {
+                    /* 跨域或 file:// 限制时无法读高度，保留默认 min-height + 内部滚动 */
+                }
+            });
+            innerEl.appendChild(iframe);
+        }
+
+        async function loadInlineSnapshotContent(innerEl, filePath, kind, title) {
+            innerEl.innerHTML = '<div class="step-detail">正在加载...</div>';
+            if (!filePath) {
+                innerEl.innerHTML = '<div class="step-detail">未配置文件名，请在 demoData 的 chunks/assets 中补充 file 字段。</div>';
+                return;
+            }
+            const resolved = resolveAssetUrl(filePath);
+            const imageExt = /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/i;
+            const k = (kind || '').toLowerCase();
+            if (k === 'image' || imageExt.test(filePath)) {
+                innerEl.textContent = '';
+                const img = document.createElement('img');
+                img.className = 'viewer-inline-image';
+                img.src = resolved;
+                img.alt = title || '';
+                innerEl.appendChild(img);
+                return;
+            }
+            try {
+                const resp = await fetch(resolved);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const text = await resp.text();
+                innerEl.innerHTML = `<pre class="viewer-inline-pre">${escapeHtml(text)}</pre>`;
+            } catch (err) {
+                showTextIframeFallback(innerEl, filePath, title);
+            }
+        }
+
+        async function handleSnapshotToggle(ev) {
+            const toggle = ev.target.closest('.snapshot-toggle');
+            if (!toggle || !doms.snapContent.contains(toggle)) return;
+            ev.preventDefault();
+            const item = toggle.closest('.snapshot-item');
+            const panel = item.querySelector('.snapshot-panel');
+            const inner = item.querySelector('.snapshot-panel-inner');
+            const isOpen = item.classList.toggle('open');
+            toggle.setAttribute('aria-expanded', isOpen);
+            panel.hidden = !isOpen;
+            if (!isOpen) return;
+            if (item.getAttribute('data-loaded') === '1') return;
+            const file = toggle.getAttribute('data-file') || '';
+            const kind = toggle.getAttribute('data-kind') || '';
+            const title = toggle.getAttribute('data-title') || '';
+            await loadInlineSnapshotContent(inner, file, kind, title);
+            item.setAttribute('data-loaded', '1');
+        }
+
+        function setupSnapshotAccordion() {
+            doms.snapContent.addEventListener('click', handleSnapshotToggle);
+            doms.snapContent.addEventListener('keydown', (ev) => {
+                if (ev.key !== 'Enter' && ev.key !== ' ') return;
+                const t = ev.target.closest('.snapshot-toggle');
+                if (!t || !doms.snapContent.contains(t)) return;
+                ev.preventDefault();
+                t.click();
+            });
+        }
+
+        function renderSnapshot(stepData) {
+            if (!hasSnapshotForStep(stepData)) {
+                doms.snapContent.innerHTML = '';
+                doms.snapContent.style.display = 'none';
+                doms.snapEmpty.style.display = 'flex';
+                doms.snapEmpty.innerHTML = '<span style="font-size: 24px; margin-bottom: 10px;">📄</span><p>本步骤无检索动作，不展示源文件快照。</p>';
+                return;
+            }
+
+            doms.snapEmpty.style.display = 'none';
+            doms.snapContent.style.display = 'block';
+
+            const chunks = stepData.chunks || [];
+            const assets = stepData.assets || (stepData.images || []).map((img, idx) => ({
+                name: img,
+                file: `step_asset_${idx + 1}.png`,
+                kind: "image"
+            }));
+
+            let html = `<div class="doc-card">
+                <div style="font-weight:bold; margin-bottom:10px;">检索节点</div>
+                <div class="step-detail"><span class="doc-tag">章节</span> ${stepData.action.replace('定位: ', '')}</div>
+                <div class="step-detail" style="margin-top:8px;"><span class="doc-tag">原因</span> ${stepData.reason || '—'}</div>
+            </div>
+            <div class="doc-card">
+                <div style="font-weight:bold; margin-bottom:10px;">检索到的文本片段</div>`;
+
+            if (chunks.length === 0) {
+                html += '<div class="step-detail" style="margin-bottom:8px;">（本步无 chunk）</div>';
+            } else {
+                chunks.forEach(chunk => {
+                    html += snapshotRowHtml('📄', chunk.name, chunk.file, chunk.kind || 'text');
+                });
+            }
+
+            html += `</div><div class="doc-card"><div style="font-weight:bold; margin-bottom:10px;">检索到的图片/图表</div>`;
+
+            if (assets.length === 0) {
+                html += '<div class="step-detail">（本步无图表）</div>';
+            } else {
+                assets.forEach(asset => {
+                    html += snapshotRowHtml('📊', asset.name, asset.file, asset.kind || 'image');
+                });
+            }
+
+            html += `</div>`;
+            doms.snapContent.innerHTML = html;
+        }
+
+        function autoResizeInput() {
+            doms.input.style.height = 'auto';
+            doms.input.style.height = `${doms.input.scrollHeight}px`;
+        }
+
+        async function runDemo() {
+            if (isRunning) return;
+            isRunning = true;
+
+            // 清空界面
+            doms.chatArea.innerHTML = '';
+            doms.trajectoryArea.innerHTML = '';
+            doms.input.value = '';
+            autoResizeInput();
+            doms.snapEmpty.style.display = 'flex';
+            doms.snapEmpty.innerHTML = '<span style="font-size: 24px; margin-bottom: 10px;">⏳</span><p>正在分析数据请求...</p>';
+            doms.snapContent.style.display = 'none';
+
+            // 1. 模拟输入 (为了真实感，打字速度稍微带点随机性)
+            const q = demoData.question;
+            for(let i=0; i<=q.length; i++) {
+                doms.input.value = q.substring(0, i);
+                autoResizeInput();
+                await new Promise(r => setTimeout(r, 95 + Math.random() * 85)); 
+            }
+            
+            await new Promise(r => setTimeout(r, 400));
+            addMessage(q, true);
+            doms.input.value = '';
+            autoResizeInput();
+            
+            // 2. 模拟正在思考提示
+            const loadingMsg = addMessage("正在进行意图拆解与多跳检索...", false);
+            await new Promise(r => setTimeout(r, 600));
+
+            // const intentHtml = `
+            //     <div style="margin-bottom:8px;"><strong>意图拆解（Intent Space）</strong></div>
+            //     ${demoData.intents.map(it => `<div style="margin-bottom:6px;">${it.no}. <span class="doc-tag">${it.type}</span> ${it.desc}</div>`).join('')}
+            // `;
+            // loadingMsg.innerHTML = intentHtml;
+            // doms.chatArea.scrollTop = doms.chatArea.scrollHeight;
+            // await new Promise(r => setTimeout(r, 1200));
+            // loadingMsg.innerHTML = "已完成意图拆解，正在展开状态空间推演...";
+            
+            // 3. 逐个渲染思考轨迹
+            for(let i=0; i<demoData.steps.length; i++) {
+                await new Promise(r => setTimeout(r, 1500)); // 模拟请求延迟
+                
+                const step = demoData.steps[i];
+                const stepDiv = document.createElement('div');
+                stepDiv.className = 'step active';
+                stepDiv.innerHTML = `
+                    <div class="step-title">${step.title}</div>
+                    <div class="step-detail"><strong>Observation:</strong> ${step.observation || '—'}</div>
+                    <div class="step-detail"><strong>Thought:</strong> ${step.thought}</div>
+                    <div class="step-action">⚡ ${step.action}</div>
+                `;
+                
+                stepDiv.onclick = () => {
+                    document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+                    stepDiv.classList.add('active');
+                    renderSnapshot(step);
+                };
+                
+                doms.trajectoryArea.appendChild(stepDiv);
+                stepDiv.style.display = 'block';
+                
+                document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+                stepDiv.classList.add('active');
+                renderSnapshot(step);
+                
+                doms.trajectoryArea.scrollTop = doms.trajectoryArea.scrollHeight;
+            }
+
+            // 4. 流式输出最终答案
+            await new Promise(r => setTimeout(r, 800));
+            loadingMsg.innerHTML = ""; 
+            
+            const ansText = boldMarkdownToHtml(demoData.finalAnswer);
+            let currentText = "";
+            let inTag = false; 
+            
+            for(let i=0; i<ansText.length; i++) {
+                let char = ansText[i];
+                if(char === '<') inTag = true;
+                currentText += char;
+                if(char === '>') inTag = false;
+                
+                if(!inTag) {
+                    loadingMsg.innerHTML = currentText;
+                    doms.chatArea.scrollTop = doms.chatArea.scrollHeight;
+                    await new Promise(r => setTimeout(r, 20 + Math.random() * 20)); 
+                }
+            }
+            
+            isRunning = false;
+        }
+
+        /** 将 **文本** 转为 <strong>，供 innerHTML 显示为加粗 */
+        function boldMarkdownToHtml(s) {
+            return s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        }
+
+        function clamp(val, min, max) {
+            return Math.max(min, Math.min(max, val));
+        }
+
+        function setupResizablePanels() {
+            // 左右分栏拖拽
+            doms.mainSplitter.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                doms.mainSplitter.classList.add('is-dragging');
+
+                const containerRect = doms.mainContainer.getBoundingClientRect();
+                const splitterWidth = doms.mainSplitter.offsetWidth;
+                const minPanelWidth = 320;
+                const maxLeft = containerRect.width - splitterWidth - minPanelWidth;
+
+                const onMove = (moveEvent) => {
+                    const offsetX = moveEvent.clientX - containerRect.left;
+                    const nextLeft = clamp(offsetX - splitterWidth / 2, minPanelWidth, maxLeft);
+                    doms.leftPanel.style.width = `${nextLeft}px`;
+                };
+
+                const onUp = () => {
+                    doms.mainSplitter.classList.remove('is-dragging');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+
+            // 右侧上下分栏拖拽
+            doms.rightSplitter.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                doms.rightSplitter.classList.add('is-dragging');
+
+                const rightRect = doms.rightPanel.getBoundingClientRect();
+                const splitterHeight = doms.rightSplitter.offsetHeight;
+                const minBoxHeight = 150;
+                const maxTop = rightRect.height - splitterHeight - minBoxHeight;
+
+                const onMove = (moveEvent) => {
+                    const offsetY = moveEvent.clientY - rightRect.top;
+                    const nextTop = clamp(offsetY - splitterHeight / 2, minBoxHeight, maxTop);
+                    doms.trajectoryBox.style.height = `${nextTop}px`;
+                };
+
+                const onUp = () => {
+                    doms.rightSplitter.classList.remove('is-dragging');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        }
+
+        // --- 演示触发：单击输入框 / 快捷键 ---
+
+        doms.input.addEventListener('click', () => {
+            runDemo();
+        });
+        doms.input.addEventListener('input', autoResizeInput);
+
+        // 键盘快捷键 Ctrl + Shift + Y
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && (e.key === 'y' || e.key === 'Y')) {
+                runDemo();
+            }
+        });
+
+        // 为了防止真正的点击"发送"按钮看起来无效，给它绑定一个提示
+        document.getElementById('sendBtn').addEventListener('click', () => {
+             if(!isRunning && doms.input.value.trim() === "") {
+                 doms.input.placeholder = "（录屏时可单击输入框或 Ctrl+Shift+Y 触发哦~）";
+             }
+        });
+
+        setupSnapshotAccordion();
+
+        autoResizeInput();
+        setupResizablePanels();
+
+    </script>
+</body>
+</html>
